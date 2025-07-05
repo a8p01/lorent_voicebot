@@ -25,12 +25,12 @@ class WatchImageMatcher:
             "Ophelia": ["ophelia"],
             "Eterna": ["eterna"],
             "Lunaire Noir": ["lunaire noir", "lunaire-noir", "Lunaire-noir", "Lunaire-Noir"],
-            "Lunaire Rosé": ["lunaire rosé", "lunaire rose", "lunaire-rose",  "Lunaire-rose", "Lunaire-Rose"],
+            "Lunaire Rose": ["lunaire rose", "lunaire-rose",  "Lunaire-rose", "Lunaire-Rose"],
 
             # Sport Collection
             "Explorer": ["explorer"],
-            "Dive Master": ["dive master", "dive-master", "Dive-Master"],
-            "Field Ranger": ["field ranger", "field-ranger", "Field-Ranger"],
+            "Dive Master": ["dive master", "Dive-master", "dive-master", "Dive-Master"],
+            "Field Ranger": ["field ranger", "Field-ranger", "field-ranger", "Field-Ranger"],
             "Nightfall": ["nightfall"],
 
             # Special / Extravagant Collection

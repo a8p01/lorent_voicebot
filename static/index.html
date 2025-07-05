@@ -161,20 +161,24 @@
         font-size: 0.95rem;
       }
 
-      .watch-image-container {
+     .watch-image-container {
         margin-top: 15px;
         border-radius: 12px;
         overflow: hidden;
         background: #f8f9fa;
         border: 2px solid #e9ecef;
+        display: flex;              /* Add this */
+        flex-direction: column;     /* Add this */
+        align-items: center;        /* Add this - centers horizontally */
       }
 
-      .watch-image {
+    .watch-image {
         width: 100%;
         max-width: 300px;
         height: auto;
         display: block;
         border-radius: 10px;
+        margin: 0 auto;             /* Add this - additional centering */
       }
 
       .watch-model-label {
