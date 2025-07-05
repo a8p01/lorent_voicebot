@@ -1,161 +1,11 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import base64
 from pathlib import Path
-from datetime import datetime, timezone
-from pymongo import MongoClient
-from dotenv import load_dotenv
-import logging
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class DatabaseManager:
-    def __init__(self):
-        self.client = None
-        self.db = None
-        self.conversations_collection = None
-        self.sessions_collection = None
-        self.connect()
-    
-    def connect(self):
-        """Initialize MongoDB connection"""
-        try:
-            mongo_uri = os.environ.get('MONGODB_URI')
-            if not mongo_uri:
-                logger.warning("MONGODB_URI not found - database features disabled")
-                return
-                
-            self.client = MongoClient(mongo_uri)
-            
-            # Test connection
-            self.client.admin.command('ping')
-            
-            # Initialize database and collections
-            db_name = os.environ.get('MONGODB_DB_NAME', 'lorent_voicebot')
-            self.db = self.client[db_name]
-            
-            self.conversations_collection = self.db.conversations
-            self.sessions_collection = self.db.sessions
-            
-            # Create indexes for better performance
-            self.conversations_collection.create_index("session_id")
-            self.conversations_collection.create_index("timestamp")
-            self.sessions_collection.create_index("session_id")
-            self.sessions_collection.create_index("start_time")
-            
-            logger.info("MongoDB connection established successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to MongoDB: {e}")
-            self.client = None
-    
-    def create_session(self, session_id, user_agent=None, ip_address=None):
-        """Create a new conversation session"""
-        if not self.client:
-            return None
-            
-        try:
-            session_data = {
-                "session_id": session_id,
-                "start_time": datetime.now(timezone.utc),
-                "end_time": None,
-                "user_agent": user_agent,
-                "ip_address": ip_address,
-                "message_count": 0,
-                "watch_recommendations": [],
-                "session_duration": None,
-                "status": "active"
-            }
-            
-            result = self.sessions_collection.insert_one(session_data)
-            logger.info(f"Created session: {session_id}")
-            return str(result.inserted_id)
-            
-        except Exception as e:
-            logger.error(f"Failed to create session: {e}")
-            return None
-    
-    def end_session(self, session_id):
-        """End a conversation session"""
-        if not self.client:
-            return False
-            
-        try:
-            end_time = datetime.now(timezone.utc)
-            
-            # Get session start time to calculate duration
-            session = self.sessions_collection.find_one({"session_id": session_id})
-            if session:
-                duration = (end_time - session['start_time']).total_seconds()
-                
-                self.sessions_collection.update_one(
-                    {"session_id": session_id},
-                    {
-                        "$set": {
-                            "end_time": end_time,
-                            "session_duration": duration,
-                            "status": "completed"
-                        }
-                    }
-                )
-                
-                logger.info(f"Ended session: {session_id}, Duration: {duration}s")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to end session: {e}")
-            
-        return False
-    
-    def log_conversation(self, session_id, message_type, content, watch_model=None, 
-                        emotions=None, audio_duration=None, metadata=None):
-        """Log a conversation message"""
-        if not self.client:
-            return None
-            
-        try:
-            conversation_data = {
-                "session_id": session_id,
-                "timestamp": datetime.now(timezone.utc),
-                "message_type": message_type,  # 'user' or 'assistant'
-                "content": content,
-                "watch_model": watch_model,
-                "emotions": emotions,
-                "audio_duration": audio_duration,
-                "metadata": metadata or {}
-            }
-            
-            result = self.conversations_collection.insert_one(conversation_data)
-            
-            # Update session message count
-            self.sessions_collection.update_one(
-                {"session_id": session_id},
-                {"$inc": {"message_count": 1}}
-            )
-            
-            # If watch model was recommended, add to session
-            if watch_model:
-                self.sessions_collection.update_one(
-                    {"session_id": session_id},
-                    {"$addToSet": {"watch_recommendations": watch_model}}
-                )
-            
-            logger.info(f"Logged conversation: {session_id}, Type: {message_type}")
-            return str(result.inserted_id)
-            
-        except Exception as e:
-            logger.error(f"Failed to log conversation: {e}")
-            return None
 
 class WatchImageMatcher:
     def __init__(self, images_folder="watch_images"):
@@ -163,7 +13,7 @@ class WatchImageMatcher:
         # Ensure the images folder exists
         if not self.images_folder.exists():
             self.images_folder.mkdir(exist_ok=True)
-        
+            
         self.watch_models = {
             # Classic Collection
             "Linea": ["linea"],
@@ -189,7 +39,7 @@ class WatchImageMatcher:
             "Volt": ["volt"],
             "Dynastia": ["dynastia"]
         }
-
+        
         self.variation_to_model = {}
         for model, variations in self.watch_models.items():
             for variation in variations:
@@ -230,15 +80,13 @@ class WatchImageMatcher:
                 image_data = f.read()
                 return base64.b64encode(image_data).decode('utf-8')
         except FileNotFoundError:
-            logger.error(f"Image not found: {image_path}")
+            print(f"Image not found: {image_path}")
             return None
         except Exception as e:
-            logger.error(f"Error reading image {image_path}: {e}")
+            print(f"Error reading image {image_path}: {e}")
             return None
 
-# Initialize components
 watch_matcher = WatchImageMatcher()
-db_manager = DatabaseManager()
 
 @app.route('/')
 def index():
@@ -311,87 +159,6 @@ def get_watch_models():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# New endpoints for conversation tracking
-@app.route('/api/session/start', methods=['POST'])
-def start_session():
-    """Start a new conversation session"""
-    try:
-        data = request.get_json()
-        session_id = data.get('session_id')
-        user_agent = request.headers.get('User-Agent')
-        ip_address = request.remote_addr
-        
-        if not session_id:
-            return jsonify({'error': 'session_id is required'}), 400
-        
-        session_doc_id = db_manager.create_session(session_id, user_agent, ip_address)
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'session_doc_id': session_doc_id
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Failed to start session: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/session/end', methods=['POST'])
-def end_session():
-    """End a conversation session"""
-    try:
-        data = request.get_json()
-        session_id = data.get('session_id')
-        
-        if not session_id:
-            return jsonify({'error': 'session_id is required'}), 400
-        
-        success = db_manager.end_session(session_id)
-        
-        return jsonify({
-            'success': success,
-            'session_id': session_id
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Failed to end session: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/conversation/log', methods=['POST'])
-def log_conversation():
-    """Log a conversation message"""
-    try:
-        data = request.get_json()
-        session_id = data.get('session_id')
-        message_type = data.get('message_type')  # 'user' or 'assistant'
-        content = data.get('content')
-        watch_model = data.get('watch_model')
-        emotions = data.get('emotions')
-        audio_duration = data.get('audio_duration')
-        metadata = data.get('metadata', {})
-        
-        if not all([session_id, message_type, content]):
-            return jsonify({'error': 'session_id, message_type, and content are required'}), 400
-        
-        conversation_id = db_manager.log_conversation(
-            session_id=session_id,
-            message_type=message_type,
-            content=content,
-            watch_model=watch_model,
-            emotions=emotions,
-            audio_duration=audio_duration,
-            metadata=metadata
-        )
-        
-        return jsonify({
-            'success': True,
-            'conversation_id': conversation_id
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Failed to log conversation: {e}")
-        return jsonify({'error': str(e)}), 500
-
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({'error': 'Not found'}), 404
@@ -402,4 +169,4 @@ def server_error(e):
 
 # This is required for Vercel
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
