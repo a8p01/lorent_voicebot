@@ -184,8 +184,8 @@
         font-weight: 600;
         font-size: 0.9rem;
         text-align: center;
-        width: 100%;          /* Added this line */
-        box-sizing: border-box; /* Added this line */
+        width: 100%;
+        box-sizing: border-box;
       } 
       .chat-input {
         padding: 20px;
@@ -363,6 +363,7 @@
           this.currentAudio = null;
           this.mediaRecorder = null;
           this.audioStream = null;
+          this.sessionId = null;  // Added for conversation tracking
 
           // Get config ID from URL parameters
           const urlParams = new URLSearchParams(window.location.search);
@@ -394,6 +395,7 @@
             }
 
             this.authData = authData;
+            this.sessionId = authData.sessionId;  // Store session ID
             this.updateConnectionStatus("ready");
             this.addSystemMessage(
               "Voice interface ready! Click microphone to start conversation.",
@@ -421,6 +423,45 @@
           this.hangupButton.addEventListener("click", () => {
             this.hangupCall();
           });
+        }
+
+        async logMessage(messageType, content, watchModel = null) {
+          if (!this.sessionId) return;
+          
+          try {
+            await fetch('/api/log-message', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                session_id: this.sessionId,
+                message_type: messageType,
+                content: content,
+                watch_model: watchModel
+              })
+            });
+          } catch (error) {
+            console.error('Failed to log message:', error);
+          }
+        }
+
+        async endSession() {
+          if (!this.sessionId) return;
+          
+          try {
+            await fetch('/api/end-session', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                session_id: this.sessionId
+              })
+            });
+          } catch (error) {
+            console.error('Failed to end session:', error);
+          }
         }
 
         async startRecording() {
@@ -468,6 +509,7 @@
           if (this.isCallActive) {
             await this.stopRecording();
             this.isCallActive = false;
+            await this.endSession();  // Log session end
             this.addSystemMessage(
               "Call ended. Thank you for using Lorent Watch Advisor!",
               "success"
@@ -517,6 +559,8 @@
               case "user_message":
                 if (message.message && message.message.content) {
                   this.addMessage("user", message.message.content);
+                  // Log user message
+                  await this.logMessage("user", message.message.content);
                 }
                 break;
 
@@ -531,6 +575,8 @@
                     watchInfo.watchModel,
                     watchInfo.watchImage
                   );
+                  // Log assistant message (this is also handled in the watch-image endpoint)
+                  await this.logMessage("assistant", message.message.content, watchInfo.watchModel);
                 }
                 break;
 
@@ -664,7 +710,10 @@
               headers: {
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ text: text }),
+              body: JSON.stringify({ 
+                text: text,
+                session_id: this.sessionId  // Include session ID
+              }),
             });
 
             const data = await response.json();
