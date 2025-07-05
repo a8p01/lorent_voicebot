@@ -4,6 +4,7 @@ import os
 import base64
 import json
 import uuid
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -14,9 +15,22 @@ CORS(app)
 conversations = []
 sessions = []
 
+def analyze_text(text):
+    """Analyze text for various metrics"""
+    words = len(text.split())
+    characters = len(text)
+    sentences = len(re.split(r'[.!?]+', text.strip())) - 1 if text.strip() else 0
+    return {
+        'word_count': words,
+        'character_count': characters,
+        'sentence_count': max(sentences, 1) if text.strip() else 0
+    }
+
 def log_conversation_memory(session_id, message_type, content, watch_model=None):
     """Log conversation data to memory"""
     try:
+        text_analysis = analyze_text(content)
+        
         log_entry = {
             'id': str(uuid.uuid4()),
             'session_id': session_id,
@@ -24,11 +38,14 @@ def log_conversation_memory(session_id, message_type, content, watch_model=None)
             'message_type': message_type,
             'content': content,
             'watch_model': watch_model,
+            'word_count': text_analysis['word_count'],
+            'character_count': text_analysis['character_count'],
+            'sentence_count': text_analysis['sentence_count'],
             'user_agent': request.headers.get('User-Agent', 'Unknown'),
             'ip_address': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
         }
         conversations.append(log_entry)
-        print(f"Logged conversation: {log_entry}")
+        print(f"Logged conversation: {message_type} - {watch_model} - {text_analysis['word_count']} words")
     except Exception as e:
         print(f"Error logging conversation: {e}")
 
@@ -40,6 +57,11 @@ def log_session_start_memory(session_id, config_id):
             'start_time': datetime.now().isoformat(),
             'end_time': None,
             'total_messages': 0,
+            'total_words': 0,
+            'duration_seconds': 0,
+            'watch_models_shown': [],
+            'user_messages': 0,
+            'assistant_messages': 0,
             'config_id': config_id,
             'user_agent': request.headers.get('User-Agent', 'Unknown'),
             'ip_address': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
@@ -48,6 +70,39 @@ def log_session_start_memory(session_id, config_id):
         print(f"Logged session start: {session_entry}")
     except Exception as e:
         print(f"Error logging session start: {e}")
+
+def update_session_stats(session_id):
+    """Update session statistics"""
+    try:
+        session = next((s for s in sessions if s['session_id'] == session_id), None)
+        if not session:
+            return
+        
+        session_conversations = [c for c in conversations if c['session_id'] == session_id]
+        
+        # Count messages by type
+        user_messages = [c for c in session_conversations if c['message_type'] == 'user']
+        assistant_messages = [c for c in session_conversations if c['message_type'] == 'assistant']
+        
+        # Count unique watch models actually shown (only when watch_model is not None)
+        watch_models_shown = list(set([c['watch_model'] for c in session_conversations if c['watch_model']]))
+        
+        # Calculate total words
+        total_words = sum(c['word_count'] for c in session_conversations)
+        
+        # Update session
+        session.update({
+            'total_messages': len(session_conversations),
+            'user_messages': len(user_messages),
+            'assistant_messages': len(assistant_messages),
+            'total_words': total_words,
+            'watch_models_shown': watch_models_shown
+        })
+        
+        print(f"Updated session stats: {len(session_conversations)} messages, {len(watch_models_shown)} watches shown")
+        
+    except Exception as e:
+        print(f"Error updating session stats: {e}")
 
 class WatchImageMatcher:
     def __init__(self, images_folder="watch_images"):
@@ -81,6 +136,26 @@ class WatchImageMatcher:
             "Dynastia": ["dynastia"]
         }
         
+        # Collection mapping
+        self.model_to_collection = {
+            "Linea": "Classic",
+            "Serene": "Classic",
+            "Winchester": "Classic",
+            "Sheffield": "Classic",
+            "Ophelia": "Contemporary",
+            "Eterna": "Contemporary",
+            "Lunaire Noir": "Contemporary",
+            "Lunaire Rose": "Contemporary",
+            "Explorer": "Sport",
+            "Dive Master": "Sport",
+            "Field Ranger": "Sport",
+            "Nightfall": "Sport",
+            "Luna": "Special",
+            "Commander": "Special",
+            "Volt": "Special",
+            "Dynastia": "Special"
+        }
+        
         self.variation_to_model = {}
         for model, variations in self.watch_models.items():
             for variation in variations:
@@ -99,6 +174,9 @@ class WatchImageMatcher:
                 return model
         
         return None
+    
+    def get_collection(self, model_name):
+        return self.model_to_collection.get(model_name, "Unknown")
     
     def get_image_path(self, model_name):
         if not model_name:
@@ -149,15 +227,9 @@ def get_auth_token():
         hume_api_key = os.environ.get('HUME_API_KEY')
         hume_secret_key = os.environ.get('HUME_SECRET_KEY')
         
-        print(f"API Key exists: {bool(hume_api_key)}")
-        print(f"Secret Key exists: {bool(hume_secret_key)}")
-        
-        # Get config_id from query parameter, fallback to env variable
         config_id = request.args.get('config_id')
         if not config_id:
             config_id = os.environ.get('HUME_CONFIG_ID')
-        
-        print(f"Config ID: {config_id}")
         
         if not all([hume_api_key, hume_secret_key, config_id]):
             missing = []
@@ -182,7 +254,7 @@ def get_auth_token():
             'sessionId': session_id
         }
         
-        print(f"Returning auth data: {response_data}")
+        print(f"Returning auth data with session: {session_id}")
         return jsonify(response_data), 200
         
     except Exception as e:
@@ -199,9 +271,12 @@ def get_watch_image():
         
         watch_model = watch_matcher.find_watch_model(text)
         
-        # Log the assistant message
-        log_conversation_memory(session_id, 'assistant', text, watch_model)
-        
+        # Only log if this is actually showing a watch (not just any assistant message)
+        if watch_model:
+            print(f"Watch model found: {watch_model}")
+            # The assistant message itself will be logged separately via /api/log-message
+            # We only want to count actual watch displays here
+            
         if not watch_model:
             return jsonify({'watchModel': None, 'watchImage': None}), 200
         
@@ -209,7 +284,8 @@ def get_watch_image():
         
         return jsonify({
             'watchModel': watch_model,
-            'watchImage': watch_image
+            'watchImage': watch_image,
+            'collection': watch_matcher.get_collection(watch_model)
         }), 200
     except Exception as e:
         print(f"Watch image error: {str(e)}")
@@ -226,6 +302,7 @@ def log_message():
         watch_model = data.get('watch_model', None)
         
         log_conversation_memory(session_id, message_type, content, watch_model)
+        update_session_stats(session_id)
         
         return jsonify({'success': True}), 200
     except Exception as e:
@@ -240,11 +317,16 @@ def end_session():
         session_id = data.get('session_id', 'unknown')
         
         # Find and update session in memory
-        for session in sessions:
-            if session['session_id'] == session_id:
-                session['end_time'] = datetime.now().isoformat()
-                session['total_messages'] = len([c for c in conversations if c['session_id'] == session_id])
-                break
+        session = next((s for s in sessions if s['session_id'] == session_id), None)
+        if session:
+            session['end_time'] = datetime.now().isoformat()
+            
+            # Calculate duration
+            start_time = datetime.fromisoformat(session['start_time'])
+            end_time = datetime.fromisoformat(session['end_time'])
+            session['duration_seconds'] = int((end_time - start_time).total_seconds())
+            
+        update_session_stats(session_id)
         
         return jsonify({'success': True}), 200
     except Exception as e:
@@ -276,11 +358,93 @@ def get_conversations():
 def get_sessions():
     """Get session data for analysis"""
     try:
+        # Update all session stats before returning
+        for session in sessions:
+            update_session_stats(session['session_id'])
+        
         # Sort sessions by start time (newest first)
         sorted_sessions = sorted(sessions, key=lambda x: x['start_time'], reverse=True)
         return jsonify({'sessions': sorted_sessions}), 200
     except Exception as e:
         print(f"Get sessions error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    """Get advanced analytics"""
+    try:
+        # Update all session stats
+        for session in sessions:
+            update_session_stats(session['session_id'])
+        
+        # Calculate advanced metrics
+        total_sessions = len(sessions)
+        total_conversations = len(conversations)
+        
+        if total_sessions == 0:
+            return jsonify({
+                'total_sessions': 0,
+                'total_messages': 0,
+                'total_words': 0,
+                'avg_messages_per_session': 0,
+                'avg_words_per_session': 0,
+                'avg_session_duration': 0,
+                'unique_watches_shown': 0,
+                'total_watch_displays': 0,
+                'collection_breakdown': {},
+                'popular_watches': []
+            }), 200
+        
+        # User vs Assistant messages
+        user_messages = [c for c in conversations if c['message_type'] == 'user']
+        assistant_messages = [c for c in conversations if c['message_type'] == 'assistant']
+        
+        # Watch analytics
+        watch_displays = [c for c in conversations if c['watch_model']]
+        unique_watches = list(set([c['watch_model'] for c in watch_displays]))
+        
+        # Collection breakdown
+        collection_counts = {}
+        for conv in watch_displays:
+            collection = watch_matcher.get_collection(conv['watch_model'])
+            collection_counts[collection] = collection_counts.get(collection, 0) + 1
+        
+        # Popular watches
+        watch_counts = {}
+        for conv in watch_displays:
+            watch_counts[conv['watch_model']] = watch_counts.get(conv['watch_model'], 0) + 1
+        popular_watches = sorted(watch_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        # Word statistics
+        total_words = sum(c['word_count'] for c in conversations)
+        avg_words_per_message = total_words / total_conversations if total_conversations > 0 else 0
+        
+        # Session statistics
+        completed_sessions = [s for s in sessions if s.get('end_time')]
+        avg_duration = 0
+        if completed_sessions:
+            total_duration = sum(s.get('duration_seconds', 0) for s in completed_sessions)
+            avg_duration = total_duration / len(completed_sessions)
+        
+        analytics = {
+            'total_sessions': total_sessions,
+            'total_messages': total_conversations,
+            'user_messages': len(user_messages),
+            'assistant_messages': len(assistant_messages),
+            'total_words': total_words,
+            'avg_messages_per_session': round(total_conversations / total_sessions, 1),
+            'avg_words_per_session': round(total_words / total_sessions, 1),
+            'avg_words_per_message': round(avg_words_per_message, 1),
+            'avg_session_duration': round(avg_duration, 1),
+            'unique_watches_shown': len(unique_watches),
+            'total_watch_displays': len(watch_displays),
+            'collection_breakdown': collection_counts,
+            'popular_watches': [{'model': model, 'count': count} for model, count in popular_watches]
+        }
+        
+        return jsonify(analytics), 200
+    except Exception as e:
+        print(f"Analytics error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/watch-models', methods=['GET'])
@@ -297,6 +461,10 @@ def test_endpoint():
     return jsonify({
         'message': 'API is working!',
         'timestamp': datetime.now().isoformat(),
+        'stats': {
+            'sessions': len(sessions),
+            'conversations': len(conversations)
+        },
         'environment_vars': {
             'HUME_API_KEY': bool(os.environ.get('HUME_API_KEY')),
             'HUME_SECRET_KEY': bool(os.environ.get('HUME_SECRET_KEY')),
@@ -315,4 +483,3 @@ def server_error(e):
 # This is required for Vercel
 if __name__ == "__main__":
     app.run(debug=True)
-            
