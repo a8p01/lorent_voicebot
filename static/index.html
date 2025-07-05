@@ -167,9 +167,6 @@
         overflow: hidden;
         background: #f8f9fa;
         border: 2px solid #e9ecef;
-        display: flex; /* Add this */
-        justify-content: center; /* Add this */
-        align-items: center; /* Optional: for vertical centering */
       }
 
       .watch-image {
@@ -563,21 +560,21 @@
               case "user_message":
                 if (message.message && message.message.content) {
                   this.addMessage("user", message.message.content);
+                  // Log user message without watch model
                   await this.logMessage("user", message.message.content);
                 }
                 break;
 
               case "assistant_message":
                 if (message.message && message.message.content) {
-                  const watchInfo = await this.getWatchInfo(
-                    message.message.content
-                  );
+                  const watchInfo = await this.getWatchInfo(message.message.content);
                   this.addMessage(
                     "assistant",
                     message.message.content,
                     watchInfo.watchModel,
                     watchInfo.watchImage
                   );
+                  // Log assistant message with watch model only if a watch is actually shown
                   await this.logMessage("assistant", message.message.content, watchInfo.watchModel);
                 }
                 break;
