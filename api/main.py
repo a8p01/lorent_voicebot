@@ -7,13 +7,39 @@ import uuid
 import re
 from datetime import datetime
 from pathlib import Path
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
 
 app = Flask(__name__)
 CORS(app)
 
-# Simple in-memory storage for testing
-conversations = []
-sessions = []
+# MongoDB connection
+def get_mongodb_client():
+    """Get MongoDB client with connection string from environment"""
+    try:
+        connection_string = os.environ.get('MONGODB_CONNECTION_STRING')
+        if not connection_string:
+            print("ERROR: MONGODB_CONNECTION_STRING environment variable not set")
+            return None
+        
+        client = MongoClient(connection_string)
+        # Test connection
+        client.admin.command('ping')
+        print("MongoDB connection successful!")
+        return client
+    except ConnectionFailure as e:
+        print(f"MongoDB connection failed: {e}")
+        return None
+    except Exception as e:
+        print(f"MongoDB error: {e}")
+        return None
+
+def get_database():
+    """Get database instance"""
+    client = get_mongodb_client()
+    if not client:
+        return None
+    return client['voicebot_analytics']
 
 def analyze_text(text):
     """Analyze text for various metrics"""
@@ -26,15 +52,20 @@ def analyze_text(text):
         'sentence_count': max(sentences, 1) if text.strip() else 0
     }
 
-def log_conversation_memory(session_id, message_type, content, watch_model=None):
-    """Log conversation data to memory"""
+def log_conversation_mongodb(session_id, message_type, content, watch_model=None):
+    """Log conversation data to MongoDB"""
     try:
+        db = get_database()
+        if not db:
+            print("Failed to connect to database")
+            return
+        
         text_analysis = analyze_text(content)
         
-        log_entry = {
-            'id': str(uuid.uuid4()),
+        conversation_doc = {
+            '_id': str(uuid.uuid4()),
             'session_id': session_id,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(),
             'message_type': message_type,
             'content': content,
             'watch_model': watch_model,
@@ -44,17 +75,25 @@ def log_conversation_memory(session_id, message_type, content, watch_model=None)
             'user_agent': request.headers.get('User-Agent', 'Unknown'),
             'ip_address': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
         }
-        conversations.append(log_entry)
-        print(f"Logged conversation: {message_type} - {watch_model} - {text_analysis['word_count']} words")
+        
+        result = db.conversations.insert_one(conversation_doc)
+        print(f"Logged conversation: {message_type} - {watch_model} - {text_analysis['word_count']} words - ID: {result.inserted_id}")
+        
     except Exception as e:
-        print(f"Error logging conversation: {e}")
+        print(f"Error logging conversation to MongoDB: {e}")
 
-def log_session_start_memory(session_id, config_id):
-    """Log session start to memory"""
+def log_session_start_mongodb(session_id, config_id):
+    """Log session start to MongoDB"""
     try:
-        session_entry = {
+        db = get_database()
+        if not db:
+            print("Failed to connect to database")
+            return
+        
+        session_doc = {
+            '_id': session_id,
             'session_id': session_id,
-            'start_time': datetime.now().isoformat(),
+            'start_time': datetime.now(),
             'end_time': None,
             'total_messages': 0,
             'total_words': 0,
@@ -66,43 +105,47 @@ def log_session_start_memory(session_id, config_id):
             'user_agent': request.headers.get('User-Agent', 'Unknown'),
             'ip_address': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
         }
-        sessions.append(session_entry)
-        print(f"Logged session start: {session_entry}")
+        
+        result = db.sessions.insert_one(session_doc)
+        print(f"Logged session start: {result.inserted_id}")
+        
     except Exception as e:
-        print(f"Error logging session start: {e}")
+        print(f"Error logging session start to MongoDB: {e}")
 
-def update_session_stats(session_id):
-    """Update session statistics"""
+def update_session_stats_mongodb(session_id):
+    """Update session statistics in MongoDB"""
     try:
-        session = next((s for s in sessions if s['session_id'] == session_id), None)
-        if not session:
+        db = get_database()
+        if not db:
             return
         
-        session_conversations = [c for c in conversations if c['session_id'] == session_id]
+        # Get all conversations for this session
+        conversations = list(db.conversations.find({'session_id': session_id}))
         
-        # Count messages by type
-        user_messages = [c for c in session_conversations if c['message_type'] == 'user']
-        assistant_messages = [c for c in session_conversations if c['message_type'] == 'assistant']
+        # Calculate statistics
+        user_messages = [c for c in conversations if c['message_type'] == 'user']
+        assistant_messages = [c for c in conversations if c['message_type'] == 'assistant']
+        watch_models_shown = list(set([c['watch_model'] for c in conversations if c.get('watch_model')]))
+        total_words = sum(c.get('word_count', 0) for c in conversations)
         
-        # Count unique watch models actually shown (only when watch_model is not None)
-        watch_models_shown = list(set([c['watch_model'] for c in session_conversations if c['watch_model']]))
-        
-        # Calculate total words
-        total_words = sum(c['word_count'] for c in session_conversations)
-        
-        # Update session
-        session.update({
-            'total_messages': len(session_conversations),
+        # Update session document
+        update_data = {
+            'total_messages': len(conversations),
             'user_messages': len(user_messages),
             'assistant_messages': len(assistant_messages),
             'total_words': total_words,
             'watch_models_shown': watch_models_shown
-        })
+        }
         
-        print(f"Updated session stats: {len(session_conversations)} messages, {len(watch_models_shown)} watches shown")
+        result = db.sessions.update_one(
+            {'session_id': session_id},
+            {'$set': update_data}
+        )
+        
+        print(f"Updated session stats: {len(conversations)} messages, {len(watch_models_shown)} watches shown")
         
     except Exception as e:
-        print(f"Error updating session stats: {e}")
+        print(f"Error updating session stats in MongoDB: {e}")
 
 class WatchImageMatcher:
     def __init__(self, images_folder="watch_images"):
@@ -245,7 +288,7 @@ def get_auth_token():
         
         # Generate session ID for this conversation
         session_id = str(uuid.uuid4())
-        log_session_start_memory(session_id, config_id)
+        log_session_start_mongodb(session_id, config_id)
         
         response_data = {
             'apiKey': hume_api_key,
@@ -271,11 +314,8 @@ def get_watch_image():
         
         watch_model = watch_matcher.find_watch_model(text)
         
-        # Only log if this is actually showing a watch (not just any assistant message)
         if watch_model:
             print(f"Watch model found: {watch_model}")
-            # The assistant message itself will be logged separately via /api/log-message
-            # We only want to count actual watch displays here
             
         if not watch_model:
             return jsonify({'watchModel': None, 'watchImage': None}), 200
@@ -301,8 +341,8 @@ def log_message():
         content = data.get('content', '')
         watch_model = data.get('watch_model', None)
         
-        log_conversation_memory(session_id, message_type, content, watch_model)
-        update_session_stats(session_id)
+        log_conversation_mongodb(session_id, message_type, content, watch_model)
+        update_session_stats_mongodb(session_id)
         
         return jsonify({'success': True}), 200
     except Exception as e:
@@ -316,17 +356,26 @@ def end_session():
         data = request.get_json()
         session_id = data.get('session_id', 'unknown')
         
-        # Find and update session in memory
-        session = next((s for s in sessions if s['session_id'] == session_id), None)
-        if session:
-            session['end_time'] = datetime.now().isoformat()
+        db = get_database()
+        if db:
+            end_time = datetime.now()
             
-            # Calculate duration
-            start_time = datetime.fromisoformat(session['start_time'])
-            end_time = datetime.fromisoformat(session['end_time'])
-            session['duration_seconds'] = int((end_time - start_time).total_seconds())
-            
-        update_session_stats(session_id)
+            # Get session start time to calculate duration
+            session = db.sessions.find_one({'session_id': session_id})
+            if session:
+                start_time = session['start_time']
+                duration_seconds = int((end_time - start_time).total_seconds())
+                
+                # Update session with end time and duration
+                db.sessions.update_one(
+                    {'session_id': session_id},
+                    {'$set': {
+                        'end_time': end_time,
+                        'duration_seconds': duration_seconds
+                    }}
+                )
+        
+        update_session_stats_mongodb(session_id)
         
         return jsonify({'success': True}), 200
     except Exception as e:
@@ -337,19 +386,29 @@ def end_session():
 def get_conversations():
     """Get conversation data for analysis"""
     try:
+        db = get_database()
+        if not db:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
         session_id = request.args.get('session_id')
         limit = int(request.args.get('limit', 100))
         
-        filtered_conversations = conversations
-        
+        # Build query
+        query = {}
         if session_id:
-            filtered_conversations = [c for c in conversations if c['session_id'] == session_id]
+            query['session_id'] = session_id
         
-        # Sort by timestamp (newest first) and limit
-        sorted_conversations = sorted(filtered_conversations, key=lambda x: x['timestamp'], reverse=True)
-        limited_conversations = sorted_conversations[:limit]
+        # Get conversations from MongoDB
+        conversations = list(db.conversations.find(query)
+                           .sort('timestamp', -1)  # Newest first
+                           .limit(limit))
         
-        return jsonify({'conversations': limited_conversations}), 200
+        # Convert ObjectId and datetime to strings for JSON serialization
+        for conv in conversations:
+            conv['_id'] = str(conv['_id'])
+            conv['timestamp'] = conv['timestamp'].isoformat()
+        
+        return jsonify({'conversations': conversations}), 200
     except Exception as e:
         print(f"Get conversations error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -358,13 +417,25 @@ def get_conversations():
 def get_sessions():
     """Get session data for analysis"""
     try:
-        # Update all session stats before returning
-        for session in sessions:
-            update_session_stats(session['session_id'])
+        db = get_database()
+        if not db:
+            return jsonify({'error': 'Database connection failed'}), 500
         
-        # Sort sessions by start time (newest first)
-        sorted_sessions = sorted(sessions, key=lambda x: x['start_time'], reverse=True)
-        return jsonify({'sessions': sorted_sessions}), 200
+        # Update all session stats before returning
+        for session in db.sessions.find():
+            update_session_stats_mongodb(session['session_id'])
+        
+        # Get sessions from MongoDB
+        sessions = list(db.sessions.find().sort('start_time', -1))
+        
+        # Convert datetime to strings for JSON serialization
+        for session in sessions:
+            session['_id'] = str(session['_id'])
+            session['start_time'] = session['start_time'].isoformat()
+            if session.get('end_time'):
+                session['end_time'] = session['end_time'].isoformat()
+        
+        return jsonify({'sessions': sessions}), 200
     except Exception as e:
         print(f"Get sessions error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -373,11 +444,18 @@ def get_sessions():
 def get_analytics():
     """Get advanced analytics"""
     try:
-        # Update all session stats
-        for session in sessions:
-            update_session_stats(session['session_id'])
+        db = get_database()
+        if not db:
+            return jsonify({'error': 'Database connection failed'}), 500
         
-        # Calculate advanced metrics
+        # Update all session stats
+        for session in db.sessions.find():
+            update_session_stats_mongodb(session['session_id'])
+        
+        # Get all data
+        sessions = list(db.sessions.find())
+        conversations = list(db.conversations.find())
+        
         total_sessions = len(sessions)
         total_conversations = len(conversations)
         
@@ -395,12 +473,12 @@ def get_analytics():
                 'popular_watches': []
             }), 200
         
-        # User vs Assistant messages
+        # Calculate analytics
         user_messages = [c for c in conversations if c['message_type'] == 'user']
         assistant_messages = [c for c in conversations if c['message_type'] == 'assistant']
         
         # Watch analytics
-        watch_displays = [c for c in conversations if c['watch_model']]
+        watch_displays = [c for c in conversations if c.get('watch_model')]
         unique_watches = list(set([c['watch_model'] for c in watch_displays]))
         
         # Collection breakdown
@@ -416,7 +494,7 @@ def get_analytics():
         popular_watches = sorted(watch_counts.items(), key=lambda x: x[1], reverse=True)[:5]
         
         # Word statistics
-        total_words = sum(c['word_count'] for c in conversations)
+        total_words = sum(c.get('word_count', 0) for c in conversations)
         avg_words_per_message = total_words / total_conversations if total_conversations > 0 else 0
         
         # Session statistics
@@ -458,19 +536,23 @@ def get_watch_models():
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
     """Test endpoint to verify API is working"""
-    return jsonify({
-        'message': 'API is working!',
-        'timestamp': datetime.now().isoformat(),
-        'stats': {
-            'sessions': len(sessions),
-            'conversations': len(conversations)
-        },
-        'environment_vars': {
-            'HUME_API_KEY': bool(os.environ.get('HUME_API_KEY')),
-            'HUME_SECRET_KEY': bool(os.environ.get('HUME_SECRET_KEY')),
-            'HUME_CONFIG_ID': bool(os.environ.get('HUME_CONFIG_ID'))
-        }
-    }), 200
+    try:
+        db = get_database()
+        db_status = "Connected" if db else "Failed"
+        
+        return jsonify({
+            'message': 'API is working!',
+            'timestamp': datetime.now().isoformat(),
+            'database_status': db_status,
+            'environment_vars': {
+                'HUME_API_KEY': bool(os.environ.get('HUME_API_KEY')),
+                'HUME_SECRET_KEY': bool(os.environ.get('HUME_SECRET_KEY')),
+                'HUME_CONFIG_ID': bool(os.environ.get('HUME_CONFIG_ID')),
+                'MONGODB_CONNECTION_STRING': bool(os.environ.get('MONGODB_CONNECTION_STRING'))
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.errorhandler(404)
 def not_found(e):
