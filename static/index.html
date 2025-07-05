@@ -290,6 +290,17 @@
         color: #27ae60;
       }
 
+      .debug-info {
+        background: #f1c40f;
+        color: #27ae60;
+        padding: 10px;
+        border-radius: 10px;
+        margin: 10px 0;
+        font-family: monospace;
+        font-size: 0.8rem;
+        word-break: break-all;
+      }
+
       @media (max-width: 768px) {
         .chat-container {
           height: 100vh;
@@ -363,7 +374,7 @@
           this.currentAudio = null;
           this.mediaRecorder = null;
           this.audioStream = null;
-          this.sessionId = null;  // Added for conversation tracking
+          this.sessionId = null;
 
           // Get config ID from URL parameters
           const urlParams = new URLSearchParams(window.location.search);
@@ -381,32 +392,61 @@
           this.initializeButtons();
         }
 
+        addDebugMessage(message) {
+          const debugDiv = document.createElement("div");
+          debugDiv.className = "debug-info";
+          debugDiv.textContent = `DEBUG: ${message}`;
+          this.messagesContainer.appendChild(debugDiv);
+          this.scrollToBottom();
+        }
+
         async initializeHume() {
           try {
             // Pass config_id as a query parameter to the auth endpoint
             const authUrl = `/api/auth${
               this.configId ? `?config_id=${this.configId}` : ""
             }`;
+            
+            this.addDebugMessage(`Calling: ${authUrl}`);
+            
             const authResponse = await fetch(authUrl);
-            const authData = await authResponse.json();
+            
+            this.addDebugMessage(`Response status: ${authResponse.status}`);
+            this.addDebugMessage(`Response headers: ${JSON.stringify(Object.fromEntries(authResponse.headers))}`);
+            
+            // Get the raw response text first
+            const responseText = await authResponse.text();
+            this.addDebugMessage(`Raw response: ${responseText.substring(0, 200)}...`);
+            
+            // Try to parse as JSON
+            let authData;
+            try {
+              authData = JSON.parse(responseText);
+            } catch (parseError) {
+              this.addDebugMessage(`JSON parse error: ${parseError.message}`);
+              throw new Error(`Server returned invalid JSON. Response was: ${responseText.substring(0, 100)}...`);
+            }
 
             if (authData.error) {
               throw new Error(authData.error);
             }
 
             this.authData = authData;
-            this.sessionId = authData.sessionId;  // Store session ID
+            this.sessionId = authData.sessionId;
             this.updateConnectionStatus("ready");
             this.addSystemMessage(
               "Voice interface ready! Click microphone to start conversation.",
               "success"
             );
+            this.addDebugMessage("Initialization successful!");
+            
           } catch (error) {
             console.error("Failed to initialize Hume:", error);
             this.addSystemMessage(
               `Initialization failed: ${error.message}`,
               "error"
             );
+            this.addDebugMessage(`Error: ${error.message}`);
             this.updateConnectionStatus("error");
           }
         }
@@ -509,7 +549,7 @@
           if (this.isCallActive) {
             await this.stopRecording();
             this.isCallActive = false;
-            await this.endSession();  // Log session end
+            await this.endSession();
             this.addSystemMessage(
               "Call ended. Thank you for using Lorent Watch Advisor!",
               "success"
@@ -559,7 +599,6 @@
               case "user_message":
                 if (message.message && message.message.content) {
                   this.addMessage("user", message.message.content);
-                  // Log user message
                   await this.logMessage("user", message.message.content);
                 }
                 break;
@@ -575,7 +614,6 @@
                     watchInfo.watchModel,
                     watchInfo.watchImage
                   );
-                  // Log assistant message (this is also handled in the watch-image endpoint)
                   await this.logMessage("assistant", message.message.content, watchInfo.watchModel);
                 }
                 break;
@@ -613,7 +651,6 @@
 
             this.audioStream = stream;
 
-            // Use MediaRecorder for proper audio encoding
             const mediaRecorder = new MediaRecorder(stream, {
               mimeType: "audio/webm;codecs=opus",
             });
@@ -638,7 +675,7 @@
               }
             };
 
-            mediaRecorder.start(100); // Send chunks every 100ms
+            mediaRecorder.start(100);
             this.mediaRecorder = mediaRecorder;
           } catch (error) {
             console.error("Failed to start audio capture:", error);
@@ -712,7 +749,7 @@
               },
               body: JSON.stringify({ 
                 text: text,
-                session_id: this.sessionId  // Include session ID
+                session_id: this.sessionId
               }),
             });
 
