@@ -37,9 +37,22 @@ def get_mongodb_client():
 def get_database():
     """Get database instance"""
     client = get_mongodb_client()
-    if not client:
+    if client is None:
         return None
     return client['voicebot_analytics']
+
+def test_database_connection():
+    """Test if database connection works"""
+    try:
+        db = get_database()
+        if db is None:
+            return False
+        # Try a simple operation to test connection
+        db.test_collection.find_one()
+        return True
+    except Exception as e:
+        print(f"Database test failed: {e}")
+        return False
 
 def analyze_text(text):
     """Analyze text for various metrics"""
@@ -56,7 +69,7 @@ def log_conversation_mongodb(session_id, message_type, content, watch_model=None
     """Log conversation data to MongoDB"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             print("Failed to connect to database")
             return
         
@@ -86,7 +99,7 @@ def log_session_start_mongodb(session_id, config_id):
     """Log session start to MongoDB"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             print("Failed to connect to database")
             return
         
@@ -116,7 +129,7 @@ def update_session_stats_mongodb(session_id):
     """Update session statistics in MongoDB"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             return
         
         # Get all conversations for this session
@@ -357,7 +370,7 @@ def end_session():
         session_id = data.get('session_id', 'unknown')
         
         db = get_database()
-        if db:
+        if db is not None:
             end_time = datetime.now()
             
             # Get session start time to calculate duration
@@ -387,7 +400,7 @@ def get_conversations():
     """Get conversation data for analysis"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             return jsonify({'error': 'Database connection failed'}), 500
         
         session_id = request.args.get('session_id')
@@ -418,7 +431,7 @@ def get_sessions():
     """Get session data for analysis"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             return jsonify({'error': 'Database connection failed'}), 500
         
         # Update all session stats before returning
@@ -445,7 +458,7 @@ def get_analytics():
     """Get advanced analytics"""
     try:
         db = get_database()
-        if not db:
+        if db is None:
             return jsonify({'error': 'Database connection failed'}), 500
         
         # Update all session stats
@@ -537,10 +550,11 @@ def get_watch_models():
 def test_endpoint():
     """Test endpoint to verify API is working"""
     try:
-        db = get_database()
-        db_status = "Connected" if db else "Failed"
+        # Test database connection properly
+        db_connected = test_database_connection()
+        db_status = "Connected" if db_connected else "Failed"
         
-        return jsonify({
+        response_data = {
             'message': 'API is working!',
             'timestamp': datetime.now().isoformat(),
             'database_status': db_status,
@@ -550,7 +564,22 @@ def test_endpoint():
                 'HUME_CONFIG_ID': bool(os.environ.get('HUME_CONFIG_ID')),
                 'MONGODB_CONNECTION_STRING': bool(os.environ.get('MONGODB_CONNECTION_STRING'))
             }
-        }), 200
+        }
+        
+        # Add more details if database is connected
+        if db_connected:
+            try:
+                db = get_database()
+                conversation_count = db.conversations.count_documents({})
+                session_count = db.sessions.count_documents({})
+                response_data['database_stats'] = {
+                    'conversations': conversation_count,
+                    'sessions': session_count
+                }
+            except Exception as e:
+                response_data['database_error'] = str(e)
+        
+        return jsonify(response_data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
