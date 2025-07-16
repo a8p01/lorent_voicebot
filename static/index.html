@@ -399,6 +399,7 @@
         "No config ID provided! Add ?config_id=YOUR_CONFIG_ID to the URL.",
         "error"
       );
+      this.updateConnectionStatus("error");
     } else {
       this.initializeHume();
     }
@@ -421,6 +422,7 @@
       this.authData = authData;
       this.sessionId = authData.sessionId;
       
+      this.updateConnectionStatus("ready");
       this.addSystemMessage(
         "Ready to begin your watch consultation.",
         "success"
@@ -431,6 +433,7 @@
         `Initialization failed: ${error.message}`,
         "error"
       );
+      this.updateConnectionStatus("error");
     }
   }
 
@@ -546,6 +549,7 @@
       this.socket.onerror = this.handleHumeError.bind(this);
       this.socket.onclose = this.handleHumeClose.bind(this);
 
+      this.updateConnectionStatus("connecting");
     } catch (error) {
       console.error("Failed to start recording:", error);
       this.addSystemMessage(
@@ -567,6 +571,7 @@
     }
 
     this.isRecording = false;
+    this.updateConnectionStatus("ready");
   }
 
   async hangupCall() {
@@ -579,6 +584,7 @@
         "Consultation ended. Thank you for visiting Lorent!",
         "success"
       );
+      this.updateConnectionStatus("ready");
     }
   }
 
@@ -587,6 +593,7 @@
     this.isConnected = true;
     this.isCallActive = true;
     this.isRecording = true;
+    this.updateConnectionStatus("recording");
 
     await this.startAudioCapture();
   }
@@ -595,6 +602,7 @@
     console.log("Hume connection closed");
     this.isConnected = false;
     this.isRecording = false;
+    this.updateConnectionStatus("ready");
   }
 
   handleHumeError(error) {
@@ -603,6 +611,7 @@
       `Voice error: ${error.data || error.message}`,
       "error"
     );
+    this.updateConnectionStatus("error");
   }
 
   async handleHumeMessage(event) {
@@ -836,6 +845,34 @@
 
     this.messagesContainer.appendChild(systemDiv);
     this.scrollToBottom();
+  }
+
+  updateConnectionStatus(status) {
+    switch (status) {
+      case "ready":
+        this.voiceButton.disabled = false;
+        this.hangupButton.disabled = true;
+        this.inputPlaceholder.textContent =
+          "Click START to begin conversation";
+        break;
+      case "recording":
+        this.voiceButton.disabled = true;
+        this.hangupButton.disabled = false;
+        this.inputPlaceholder.textContent =
+          "Listening... Click END to finish conversation";
+        break;
+      case "connecting":
+        this.voiceButton.disabled = true;
+        this.hangupButton.disabled = true;
+        this.inputPlaceholder.textContent =
+          "Connecting to voice interface...";
+        break;
+      case "error":
+        this.voiceButton.disabled = true;
+        this.hangupButton.disabled = true;
+        this.inputPlaceholder.textContent = "Connection error";
+        break;
+    }
   }
 
   scrollToBottom() {
