@@ -825,4 +825,475 @@
                 // Session completion rate
                 const completedSessions = await getCompletedSessionsCount();
                 const completionRate = analytics.total_sessions > 0 ? 
-                    `${((completedSessions / analytics.total_sessions) * 100).
+                    `${((completedSessions / analytics.total_sessions) * 100).toFixed(1)}%` : '0%';
+                document.getElementById('sessionCompletion').textContent = completionRate;
+
+                document.getElementById('avgSessionLength').textContent = analytics.avg_session_duration > 0 ? 
+                    `${Math.floor(analytics.avg_session_duration / 60)}m ${Math.round(analytics.avg_session_duration % 60)}s` : '0s';
+
+                // Update emotion insights
+                updateGlobalEmotions(emotionData);
+
+                // Update collection breakdown
+                updateCollectionBreakdown(analytics.collection_breakdown);
+
+                // Update popular watches
+                updatePopularWatches(analytics.popular_watches);
+
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+
+        async function getCompletedSessionsCount() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                return data.sessions.filter(s => s.end_time).length;
+            } catch (error) {
+                return 0;
+            }
+        }
+
+        function updateGlobalEmotions(emotionData) {
+            const container = document.getElementById('globalEmotions');
+            
+            if (!emotionData || !emotionData.global_top_emotions || Object.keys(emotionData.global_top_emotions).length === 0) {
+                container.innerHTML = `
+                    <div class="emotion-grid">
+                        <div class="emotion-item">
+                            <div class="emotion-name">No Data Yet</div>
+                            <div class="emotion-score">0%</div>
+                            <div class="emotion-bar">
+                                <div class="emotion-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="text-align: center; margin-top: 20px; color: rgba(255,255,255,0.7);">
+                        Start conversations to see emotional insights here
+                    </p>
+                `;
+                return;
+            }
+
+            const emotions = Object.entries(emotionData.global_top_emotions)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 8); // Show top 8 emotions
+
+            let html = '<div class="emotion-grid">';
+            emotions.forEach(([emotion, score]) => {
+                const percentage = (score * 100).toFixed(1);
+                html += `
+                    <div class="emotion-item">
+                        <div class="emotion-name">${emotion}</div>
+                        <div class="emotion-score">${percentage}%</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            // Add emotion trends if available
+            if (emotionData.emotion_trends && emotionData.emotion_trends.length > 0) {
+                html += `
+                    <div style="margin-top: 30px;">
+                        <h4 style="color: var(--gold-accent); margin-bottom: 15px; font-family: var(--font-primary);">📈 Recent Emotion Trends</h4>
+                        <div style="max-height: 200px; overflow-y: auto;">
+                `;
+                
+                emotionData.emotion_trends.slice(-5).forEach(trend => {
+                    const score = (trend.score * 100).toFixed(1);
+                    html += `
+                        <div class="emotion-trend-item">
+                            <div class="trend-date">${new Date(trend.date).toLocaleDateString()}</div>
+                            <div class="trend-emotion">${trend.top_emotion}</div>
+                            <div class="trend-score">${score}% intensity • ${trend.total_messages} messages</div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div></div>';
+            }
+
+            // Add summary stats
+            html += `
+                <div style="margin-top: 25px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; text-align: center;">
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--gold-accent);">${emotionData.sessions_with_emotions || 0}</div>
+                            <div style="font-size: 0.9rem; color: rgba(255,255,255,0.8);">Emotional Sessions</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--gold-accent);">${emotionData.messages_with_emotions || 0}</div>
+                            <div style="font-size: 0.9rem; color: rgba(255,255,255,0.8);">Emotional Messages</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--gold-accent);">${((emotionData.average_emotional_intensity || 0) * 100).toFixed(1)}%</div>
+                            <div style="font-size: 0.9rem; color: rgba(255,255,255,0.8);">Avg Intensity</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function updateCollectionBreakdown(collections) {
+            const container = document.getElementById('collectionBreakdown');
+            
+            if (!collections || Object.keys(collections).length === 0) {
+                container.innerHTML = '<div class="loading">No collection data available</div>';
+                return;
+            }
+
+            const collectionColors = {
+                'Classic': 'collection-classic',
+                'Contemporary': 'collection-contemporary', 
+                'Sport': 'collection-sport',
+                'Special': 'collection-special'
+            };
+
+            const collectionIcons = {
+                'Classic': '🎩',
+                'Contemporary': '🌟',
+                'Sport': '⚡',
+                'Special': '💎'
+            };
+
+            const html = Object.entries(collections)
+                .sort(([,a], [,b]) => b - a)
+                .map(([collection, count]) => `
+                    <div class="popular-item">
+                        <span class="popular-name">
+                            ${collectionIcons[collection] || '⌚'} ${collection} Collection
+                        </span>
+                        <span class="collection-tag ${collectionColors[collection] || 'collection-classic'}">${count}</span>
+                    </div>
+                `).join('');
+
+            container.innerHTML = html;
+        }
+
+        function updatePopularWatches(watches) {
+            const container = document.getElementById('popularWatches');
+            
+            if (!watches || watches.length === 0) {
+                container.innerHTML = '<div class="loading">No watch data available</div>';
+                return;
+            }
+
+            const html = watches.map((watch, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⌚';
+                return `
+                    <div class="popular-item">
+                        <span class="popular-name">${medal} ${watch.model}</span>
+                        <span class="popular-count">${watch.count}</span>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
+        }
+
+        async function loadSessions() {
+            const limit = document.getElementById('sessionLimit').value;
+            const content = document.getElementById('sessionsContent');
+            
+            content.innerHTML = '<div class="loading">Loading sessions...</div>';
+            
+            try {
+                const response = await fetch(`/api/sessions`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentSessions = data.sessions.slice(0, parseInt(limit));
+                
+                if (currentSessions.length === 0) {
+                    content.innerHTML = '<div class="loading">No sessions found.</div>';
+                    return;
+                }
+                
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>🆔 Session ID</th>
+                            <th>🕐 Start Time</th>
+                            <th>⏰ Duration</th>
+                            <th>💬 Messages</th>
+                            <th>📝 Words</th>
+                            <th>⌚ Watches</th>
+                            <th>🎭 Emotions</th>
+                            <th>🌍 Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${currentSessions.map(session => {
+                            const startTime = new Date(session.start_time);
+                            const endTime = session.end_time ? new Date(session.end_time) : null;
+                            
+                            let duration = 'Ongoing';
+                            if (endTime) {
+                                const seconds = session.duration_seconds || 0;
+                                const minutes = Math.floor(seconds / 60);
+                                const remainingSeconds = seconds % 60;
+                                duration = `${minutes}m ${remainingSeconds}s`;
+                            }
+                            
+                            const watchesShown = session.watch_models_shown ? session.watch_models_shown.length : 0;
+                            const hasEmotions = session.emotions_processed && session.top_emotions;
+                            const emotionIndicator = hasEmotions ? 
+                                '<span class="emotions-indicator emotions-yes"></span>Processed' : 
+                                '<span class="emotions-indicator emotions-no"></span>None';
+                            
+                            const rowClass = hasEmotions ? 'session-emotions' : 'no-emotions';
+                            
+                            return `
+                                <tr class="${rowClass}">
+                                    <td>${session.session_id.substring(0, 8)}...</td>
+                                    <td>${startTime.toLocaleString()}</td>
+                                    <td>${duration}</td>
+                                    <td>${session.total_messages || 0}</td>
+                                    <td>${session.total_words || 0}</td>
+                                    <td>${watchesShown}</td>
+                                    <td>${emotionIndicator}</td>
+                                    <td>${session.ip_address || 'Unknown'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                `;
+                
+                content.innerHTML = '';
+                content.appendChild(table);
+                
+            } catch (error) {
+                content.innerHTML = `<div class="error">❌ Error loading sessions: ${error.message}</div>`;
+            }
+        }
+
+        async function loadConversations() {
+            const sessionFilter = document.getElementById('sessionFilter').value;
+            const limit = document.getElementById('conversationLimit').value;
+            const includeEmotions = document.getElementById('includeEmotions').value;
+            const content = document.getElementById('conversationsContent');
+            
+            content.innerHTML = '<div class="loading">Loading conversations...</div>';
+            
+            try {
+                let url = `/api/conversations?limit=${limit}&include_emotions=${includeEmotions}`;
+                if (sessionFilter) {
+                    url += `&session_id=${sessionFilter}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentConversations = data.conversations;
+                
+                if (currentConversations.length === 0) {
+                    content.innerHTML = '<div class="loading">No conversations found.</div>';
+                    return;
+                }
+                
+                const hasEmotions = includeEmotions === 'true';
+                const emotionalConversations = currentConversations.filter(c => c.emotions && c.message_type === 'user');
+                
+                let tableHeaders = `
+                    <th>🕐 Time</th>
+                    <th>🆔 Session</th>
+                    <th>👤 Type</th>
+                    <th>💬 Content</th>
+                    <th>📝 Words</th>
+                    <th>⌚ Watch</th>
+                `;
+                
+                if (hasEmotions) {
+                    tableHeaders += '<th>🎭 Top Emotion</th>';
+                }
+                
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>${tableHeaders}</tr>
+                    </thead>
+                    <tbody>
+                        ${currentConversations.map(conv => {
+                            const timestamp = new Date(conv.timestamp);
+                            const content = conv.content.length > 80 ? 
+                                conv.content.substring(0, 80) + '...' : 
+                                conv.content;
+                            
+                            let topEmotion = '';
+                            if (hasEmotions && conv.emotions && conv.message_type === 'user') {
+                                const emotions = Object.entries(conv.emotions)
+                                    .sort((a, b) => b[1] - a[1]);
+                                if (emotions.length > 0) {
+                                    const [emotion, score] = emotions[0];
+                                    topEmotion = `<span style="background: linear-gradient(135deg, var(--gold-accent), var(--warm-gold)); color: var(--primary-black); padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">${emotion} (${(score * 100).toFixed(1)}%)</span>`;
+                                }
+                            }
+                            
+                            let tableRow = `
+                                <td>${timestamp.toLocaleString()}</td>
+                                <td>${conv.session_id.substring(0, 8)}...</td>
+                                <td><span class="message-${conv.message_type}">${conv.message_type}</span></td>
+                                <td>${content}</td>
+                                <td>${conv.word_count || 0}</td>
+                                <td>${conv.watch_model ? `<span class="watch-model">${conv.watch_model}</span>` : ''}</td>
+                            `;
+                            
+                            if (hasEmotions) {
+                                tableRow += `<td>${topEmotion}</td>`;
+                            }
+                            
+                            return `<tr>${tableRow}</tr>`;
+                        }).join('')}
+                    </tbody>
+                `;
+                
+                content.innerHTML = '';
+                content.appendChild(table);
+                
+                // Add summary if emotions are included
+                if (hasEmotions && emotionalConversations.length > 0) {
+                    const summary = document.createElement('div');
+                    summary.style.marginTop = '20px';
+                    summary.style.padding = '20px';
+                    summary.style.background = 'rgba(212, 175, 55, 0.1)';
+                    summary.style.borderRadius = '12px';
+                    summary.style.border = '1px solid var(--gold-accent)';
+                    summary.innerHTML = `
+                        <h4 style="color: var(--soft-black); margin-bottom: 10px; font-family: var(--font-primary);">🎭 Emotion Summary</h4>
+                        <p style="color: var(--soft-black);">
+                            Found <strong>${emotionalConversations.length}</strong> messages with emotional data out of 
+                            <strong>${currentConversations.length}</strong> total conversations 
+                            (<strong>${((emotionalConversations.length / currentConversations.length) * 100).toFixed(1)}%</strong> emotional coverage)
+                        </p>
+                    `;
+                    content.appendChild(summary);
+                }
+                
+            } catch (error) {
+                content.innerHTML = `<div class="error">❌ Error loading conversations: ${error.message}</div>`;
+            }
+        }
+
+        function exportSessions() {
+            if (currentSessions.length === 0) {
+                alert('No session data to export. Please load sessions first.');
+                return;
+            }
+            
+            const csv = [
+                ['Session ID', 'Start Time', 'End Time', 'Duration (seconds)', 'Total Messages', 'Total Words', 'User Messages', 'Assistant Messages', 'Watches Shown', 'Emotions Processed', 'Top Emotions', 'Config ID', 'IP Address'],
+                ...currentSessions.map(session => [
+                    session.session_id,
+                    session.start_time,
+                    session.end_time || '',
+                    session.duration_seconds || 0,
+                    session.total_messages || 0,
+                    session.total_words || 0,
+                    session.user_messages || 0,
+                    session.assistant_messages || 0,
+                    session.watch_models_shown ? session.watch_models_shown.join('; ') : '',
+                    session.emotions_processed ? 'Yes' : 'No',
+                    session.top_emotions ? Object.entries(session.top_emotions).map(([e, s]) => `${e}: ${(s * 100).toFixed(1)}%`).join('; ') : '',
+                    session.config_id || '',
+                    session.ip_address || ''
+                ])
+            ].map(row => row.map(field => `"${field}"`).join(',')).join('\n');
+            
+            downloadCSV(csv, `lorent_sessions_${new Date().toISOString().split('T')[0]}.csv`);
+        }
+
+        function exportConversations() {
+            if (currentConversations.length === 0) {
+                alert('No conversation data to export. Please load conversations first.');
+                return;
+            }
+            
+            const headers = ['ID', 'Session ID', 'Chat ID', 'Timestamp', 'Message Type', 'Content', 'Word Count', 'Character Count', 'Sentence Count', 'Watch Model', 'IP Address'];
+            
+            // Add emotion columns if emotions are present
+            const hasEmotions = currentConversations.some(c => c.emotions);
+            if (hasEmotions) {
+                headers.push('Top Emotion', 'Top Emotion Score', 'All Emotions JSON');
+            }
+            
+            const csv = [
+                headers,
+                ...currentConversations.map(conv => {
+                    const baseRow = [
+                        conv._id || conv.id,
+                        conv.session_id,
+                        conv.chat_id || '',
+                        conv.timestamp,
+                        conv.message_type,
+                        conv.content,
+                        conv.word_count || 0,
+                        conv.character_count || 0,
+                        conv.sentence_count || 0,
+                        conv.watch_model || '',
+                        conv.ip_address || ''
+                    ];
+                    
+                    if (hasEmotions) {
+                        if (conv.emotions && conv.message_type === 'user') {
+                            const emotions = Object.entries(conv.emotions).sort((a, b) => b[1] - a[1]);
+                            const topEmotion = emotions[0];
+                            baseRow.push(
+                                topEmotion ? topEmotion[0] : '',
+                                topEmotion ? (topEmotion[1] * 100).toFixed(2) + '%' : '',
+                                JSON.stringify(conv.emotions)
+                            );
+                        } else {
+                            baseRow.push('', '', '');
+                        }
+                    }
+                    
+                    return baseRow;
+                })
+            ].map(row => row.map(field => `"${field}"`).join(',')).join('\n');
+            
+            downloadCSV(csv, `lorent_conversations_${new Date().toISOString().split('T')[0]}.csv`);
+        }
+
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', filename);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Initialize dashboard
+        window.addEventListener('DOMContentLoaded', () => {
+            loadAnalytics();
+            loadSessions();
+            loadConversations();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                loadAnalytics();
+            }, 30000);
+        });
+    </script>
+</body>
+</html>
