@@ -425,8 +425,10 @@
     this.mediaRecorder = null;
     this.audioStream = null;
     
-    // ✅ ADD: Store session ID for database logging
+    // Store session and chat metadata
     this.sessionId = null;
+    this.chatId = null;
+    this.chatGroupId = null;
 
     // Get config ID from URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -458,7 +460,6 @@
       }
 
       this.authData = authData;
-      // ✅ ADD: Store session ID from auth response
       this.sessionId = authData.sessionId;
       
       this.updateConnectionStatus("ready");
@@ -476,8 +477,8 @@
     }
   }
 
-  // ✅ ADD: Method to log messages to database
-  async logMessage(messageType, content, watchModel = null) {
+  // Enhanced logging with emotion support
+  async logMessage(messageType, content, watchModel = null, emotions = null) {
     try {
       if (!this.sessionId) {
         console.warn("No session ID available for logging");
@@ -494,6 +495,8 @@
           message_type: messageType,
           content: content,
           watch_model: watchModel,
+          emotions: emotions,
+          chat_id: this.chatId
         }),
       });
 
@@ -505,7 +508,35 @@
     }
   }
 
-  // ✅ ADD: Method to end session in database
+  // Log chat metadata when received
+  async logChatMetadata(chatId, chatGroupId) {
+    try {
+      if (!this.sessionId) {
+        console.warn("No session ID available for logging chat metadata");
+        return;
+      }
+
+      const response = await fetch("/api/log-chat-metadata", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          session_id: this.sessionId,
+          chat_id: chatId,
+          chat_group_id: chatGroupId
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to log chat metadata:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error logging chat metadata:", error);
+    }
+  }
+
+  // End session in database
   async endSession() {
     try {
       if (!this.sessionId) {
@@ -586,7 +617,6 @@
   async hangupCall() {
     if (this.isCallActive) {
       await this.stopRecording();
-      // ✅ ADD: End session in database
       await this.endSession();
       
       this.isCallActive = false;
@@ -630,11 +660,29 @@
       console.log("Hume message:", message);
 
       switch (message.type) {
+        case "chat_metadata":
+          // Store chat metadata for emotion extraction
+          this.chatId = message.chat_id;
+          this.chatGroupId = message.chat_group_id;
+          console.log(`Chat metadata received: chat_id=${this.chatId}, chat_group_id=${this.chatGroupId}`);
+          
+          // Log metadata to database
+          if (this.chatId && this.chatGroupId) {
+            await this.logChatMetadata(this.chatId, this.chatGroupId);
+          }
+          break;
+
         case "user_message":
           if (message.message && message.message.content) {
+            // Extract emotions if available
+            let emotions = null;
+            if (message.models && message.models.prosody && message.models.prosody.scores) {
+              emotions = message.models.prosody.scores;
+              console.log("User emotions detected:", emotions);
+            }
+            
             this.addMessage("user", message.message.content);
-            // ✅ ADD: Log user message to database
-            await this.logMessage("user", message.message.content);
+            await this.logMessage("user", message.message.content, null, emotions);
           }
           break;
 
@@ -647,7 +695,6 @@
               watchInfo.watchModel,
               watchInfo.watchImage
             );
-            // ✅ ADD: Log assistant message to database with watch model
             await this.logMessage("assistant", message.message.content, watchInfo.watchModel);
           }
           break;
@@ -782,7 +829,6 @@
         },
         body: JSON.stringify({ 
           text: text,
-          // ✅ ADD: Include session ID for watch info requests
           session_id: this.sessionId 
         }),
       });
