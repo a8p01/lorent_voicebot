@@ -82,36 +82,6 @@
         letter-spacing: 1px;
       }
 
-      .connection-status {
-        position: absolute;
-        right: 25px;
-        top: 50%;
-        transform: translateY(-50%);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .status-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: var(--gold-accent);
-        animation: pulse 2s infinite;
-      }
-
-      .status-text {
-        font-family: var(--font-secondary);
-        font-size: 0.9rem;
-        color: rgba(255, 255, 255, 0.9);
-        letter-spacing: 0.5px;
-      }
-
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-      }
-
       .chat-messages {
         flex: 1;
         overflow-y: auto;
@@ -360,10 +330,6 @@
         .chat-input {
           padding: 20px;
         }
-
-        .connection-status {
-          right: 20px;
-        }
       }
     </style>
   </head>
@@ -372,10 +338,6 @@
       <div class="chat-header">
         <h1>LORENT</h1>
         <p>Watch Consultation Assistant</p>
-        <div class="connection-status">
-          <div class="status-dot" id="statusDot"></div>
-          <span class="status-text" id="status-text">Connecting...</span>
-        </div>
       </div>
 
       <div class="chat-messages" id="chatMessages">
@@ -411,8 +373,6 @@
     this.messagesContainer = document.getElementById("chatMessages");
     this.voiceButton = document.getElementById("voiceButton");
     this.hangupButton = document.getElementById("hangupButton");
-    this.statusText = document.getElementById("status-text");
-    this.statusDot = document.getElementById("statusDot");
     this.inputPlaceholder = document.querySelector(".input-placeholder");
 
     this.isConnected = false;
@@ -439,7 +399,6 @@
         "No config ID provided! Add ?config_id=YOUR_CONFIG_ID to the URL.",
         "error"
       );
-      this.updateConnectionStatus("error");
     } else {
       this.initializeHume();
     }
@@ -462,7 +421,6 @@
       this.authData = authData;
       this.sessionId = authData.sessionId;
       
-      this.updateConnectionStatus("ready");
       this.addSystemMessage(
         "Ready to begin your watch consultation.",
         "success"
@@ -473,7 +431,6 @@
         `Initialization failed: ${error.message}`,
         "error"
       );
-      this.updateConnectionStatus("error");
     }
   }
 
@@ -589,7 +546,6 @@
       this.socket.onerror = this.handleHumeError.bind(this);
       this.socket.onclose = this.handleHumeClose.bind(this);
 
-      this.updateConnectionStatus("connecting");
     } catch (error) {
       console.error("Failed to start recording:", error);
       this.addSystemMessage(
@@ -611,7 +567,6 @@
     }
 
     this.isRecording = false;
-    this.updateConnectionStatus("ready");
   }
 
   async hangupCall() {
@@ -624,7 +579,6 @@
         "Consultation ended. Thank you for visiting Lorent!",
         "success"
       );
-      this.updateConnectionStatus("ready");
     }
   }
 
@@ -633,7 +587,6 @@
     this.isConnected = true;
     this.isCallActive = true;
     this.isRecording = true;
-    this.updateConnectionStatus("recording");
 
     await this.startAudioCapture();
   }
@@ -642,7 +595,6 @@
     console.log("Hume connection closed");
     this.isConnected = false;
     this.isRecording = false;
-    this.updateConnectionStatus("ready");
   }
 
   handleHumeError(error) {
@@ -651,7 +603,6 @@
       `Voice error: ${error.data || error.message}`,
       "error"
     );
-    this.updateConnectionStatus("error");
   }
 
   async handleHumeMessage(event) {
@@ -885,42 +836,6 @@
 
     this.messagesContainer.appendChild(systemDiv);
     this.scrollToBottom();
-  }
-
-  updateConnectionStatus(status) {
-    switch (status) {
-      case "ready":
-        this.statusText.textContent = "Ready";
-        this.statusDot.style.background = "var(--gold-accent)";
-        this.voiceButton.disabled = false;
-        this.hangupButton.disabled = true;
-        this.inputPlaceholder.textContent =
-          "Click START to begin conversation";
-        break;
-      case "recording":
-        this.statusText.textContent = "Recording";
-        this.statusDot.style.background = "#e74c3c";
-        this.voiceButton.disabled = true;
-        this.hangupButton.disabled = false;
-        this.inputPlaceholder.textContent =
-          "Listening... Click END to finish conversation";
-        break;
-      case "connecting":
-        this.statusText.textContent = "Connecting...";
-        this.statusDot.style.background = "#f39c12";
-        this.voiceButton.disabled = true;
-        this.hangupButton.disabled = true;
-        this.inputPlaceholder.textContent =
-          "Connecting to voice interface...";
-        break;
-      case "error":
-        this.statusText.textContent = "Error";
-        this.statusDot.style.background = "#e74c3c";
-        this.voiceButton.disabled = true;
-        this.hangupButton.disabled = true;
-        this.inputPlaceholder.textContent = "Connection error";
-        break;
-    }
   }
 
   scrollToBottom() {
