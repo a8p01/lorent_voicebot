@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lorent Voicebot Analytics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-number {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .stat-sub {
+            color: #95a5a6;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .insight-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .insight-title {
+            font-size: 1.3rem;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .data-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 0.9rem;
+        }
+
+        .control-group input, .control-group select {
+            padding: 8px 12px;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .data-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .message-user {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .message-assistant {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .watch-model {
+            background: linear-gradient(135deg, #e67e22, #d35400);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .collection-classic { background: linear-gradient(135deg, #8e44ad, #9b59b6); }
+        .collection-contemporary { background: linear-gradient(135deg, #3498db, #2980b9); }
+        .collection-sport { background: linear-gradient(135deg, #27ae60, #229954); }
+        .collection-special { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+
+        .collection-tag {
+            color: white;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .error {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .export-btn {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            margin-left: auto;
+        }
+
+        .popular-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .popular-item:last-child {
+            border-bottom: none;
+        }
+
+        .popular-count {
+            background: #3498db;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .metric-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .metric-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .metric-desc {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .insights-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .data-table {
+                font-size: 0.8rem;
+            }
+            
+            .data-table th, .data-table td {
+                padding: 8px;
+            }
+
+            .metric-comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>Lorent Voicebot Analytics</h1>
+            <p>Advanced conversation analytics and insights</p>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalSessions">-</div>
+                <div class="stat-label">Total Sessions</div>
+                <div class="stat-sub" id="avgDuration">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalMessages">-</div>
+                <div class="stat-label">Total Messages</div>
+                <div class="stat-sub" id="messageBreakdown">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalWords">-</div>
+                <div class="stat-label">Total Words</div>
+                <div class="stat-sub" id="avgWordsPerMessage">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="uniqueWatches">-</div>
+                <div class="stat-label">Unique Watches Shown</div>
+                <div class="stat-sub" id="totalDisplays">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avgMessagesPerSession">-</div>
+                <div class="stat-label">Avg Messages/Session</div>
+                <div class="stat-sub" id="avgWordsPerSession">-</div>
+            </div>
+        </div>
+
+        <div class="insights-grid">
+            <div class="insight-card">
+                <h3 class="insight-title">Popular Watch Collections</h3>
+                <div id="collectionBreakdown">
+                    <div class="loading">Loading collection data...</div>
+                </div>
+            </div>
+            
+            <div class="insight-card">
+                <h3 class="insight-title">Most Requested Watches</h3>
+                <div id="popularWatches">
+                    <div class="loading">Loading popular watches...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="insight-card" style="margin-bottom: 30px;">
+            <h3 class="insight-title">Conversation Metrics</h3>
+            <div class="metric-comparison">
+                <div class="metric-item">
+                    <div class="metric-value" id="userVsAssistant">-</div>
+                    <div class="metric-desc">User vs Assistant Messages</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="engagementRate">-</div>
+                    <div class="metric-desc">Watch Display Rate</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="sessionCompletion">-</div>
+                    <div class="metric-desc">Session Completion Rate</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="avgSessionLength">-</div>
+                    <div class="metric-desc">Avg Session Length</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <h2 class="section-title">Session Overview</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <label>Limit Results:</label>
+                    <select id="sessionLimit">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="loadSessions()">Refresh Sessions</button>
+                <button class="btn export-btn" onclick="exportSessions()">Export CSV</button>
+            </div>
+            <div id="sessionsContent">
+                <div class="loading">Loading sessions...</div>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <h2 class="section-title">Conversation Details</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <label>Session ID (optional):</label>
+                    <input type="text" id="sessionFilter" placeholder="Enter session ID to filter">
+                </div>
+                <div class="control-group">
+                    <label>Limit Results:</label>
+                    <select id="conversationLimit">
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="loadConversations()">Load Conversations</button>
+                <button class="btn export-btn" onclick="exportConversations()">Export CSV</button>
+            </div>
+            <div id="conversationsContent">
+                <div class="loading">Loading conversations...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessions = [];
+        let currentConversations = [];
+        let currentAnalytics = {};
+
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/analytics');
+                const analytics = await response.json();
+                
+                if (analytics.error) {
+                    throw new Error(analytics.error);
+                }
+                
+                currentAnalytics = analytics;
+
+                // Update main stats
+                document.getElementById('totalSessions').textContent = analytics.total_sessions;
+                document.getElementById('totalMessages').textContent = analytics.total_messages;
+                document.getElementById('totalWords').textContent = analytics.total_words.toLocaleString();
+                document.getElementById('uniqueWatches').textContent = analytics.unique_watches_shown;
+                document.getElementById('avgMessagesPerSession').textContent = analytics.avg_messages_per_session;
+
+                // Update sub-stats
+                document.getElementById('avgDuration').textContent = analytics.avg_session_duration > 0 ? 
+                    `${analytics.avg_session_duration}s avg duration` : 'No completed sessions';
+                document.getElementById('messageBreakdown').textContent = 
+                    `${analytics.user_messages} user, ${analytics.assistant_messages} assistant`;
+                document.getElementById('avgWordsPerMessage').textContent = 
+                    `${analytics.avg_words_per_message} words/message`;
+                document.getElementById('totalDisplays').textContent = 
+                    `${analytics.total_watch_displays} total displays`;
+                document.getElementById('avgWordsPerSession').textContent = 
+                    `${analytics.avg_words_per_session} words/session`;
+
+                // Update conversation metrics
+                const userAssistantRatio = analytics.user_messages > 0 ? 
+                    `${(analytics.assistant_messages / analytics.user_messages).toFixed(1)}:1` : '0:0';
+                document.getElementById('userVsAssistant').textContent = userAssistantRatio;
+
+                const displayRate = analytics.total_messages > 0 ? 
+                    `${((analytics.total_watch_displays / analytics.total_messages) * 100).toFixed(1)}%` : '0%';
+                document.getElementById('engagementRate').textContent = displayRate;
+
+                // Session completion rate (sessions with end_time)
+                const completedSessions = await getCompletedSessionsCount();
+                const completionRate = analytics.total_sessions > 0 ? 
+                    `${((completedSessions / analytics.total_sessions) * 100).toFixed(1)}%` : '0%';
+                document.getElementById('sessionCompletion').textContent = completionRate;
+
+                document.getElementById('avgSessionLength').textContent = analytics.avg_session_duration > 0 ? 
+                    `${Math.round(analytics.avg_session_duration / 60)}m ${analytics.avg_session_duration % 60}s` : '0s';
+
+                // Update collection breakdown
+                updateCollectionBreakdown(analytics.collection_breakdown);
+
+                // Update popular watches
+                updatePopularWatches(analytics.popular_watches);
+
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+
+        async function getCompletedSessionsCount() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                return data.sessions.filter(s => s.end_time).length;
+            } catch (error) {
+                return 0;
+            }
+        }
+
+        function updateCollectionBreakdown(collections) {
+            const container = document.getElementById('collectionBreakdown');
+            
+            if (Object.keys(collections).length === 0) {
+                container.innerHTML = '<div class="loading">No collection data available</div>';
+                return;
+            }
+
+            const collectionColors = {
+                'Classic': 'collection-classic',
+                'Contemporary': 'collection-contemporary', 
+                'Sport': 'collection-sport',
+                'Special': 'collection-special'
+            };
+
+            const html = Object.entries(collections)
+                .sort(([,a], [,b]) => b - a)
+                .map(([collection, count]) => `
+                    <div class="popular-item">
+                        <span class="collection-tag ${collectionColors[collection] || 'collection-classic'}">${collection}</span>
+                        <span class="popular-count">${count}</span>
+                    </div>
+                `).join('');
+
+            container.innerHTML = html;
+        }
+
+        function updatePopularWatches(watches) {
+            const container = document.getElementById('popularWatches');
+            
+            if (watches.length === 0) {
+                container.innerHTML = '<div class="loading">No watch data available</div>';
+                return;
+            }
+
+            const html = watches.map(watch => `
+                <div class="popular-item">
+                    <span>${watch.model}</span>
+                    <span class="popular-count">${watch.count}</span>
+                </div>
+            `).join('');
+
+            container.innerHTML = html;
+        }
+
+        async function loadSessions() {
+            const limit = document.getElementById('sessionLimit').value;
+            const content = document.getElementById('sessionsContent');
+            
+            content.innerHTML = '<div class="loading">Loading sessions...</div>';
+            
+            try {
+                const response = await fetch(`/api/sessions`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentSessions = data.sessions.slice(0, parseInt(limit));
+                
+                if (currentSessions.length === 0) {
+                    content.innerHTML = '<div class="loading">No sessions found.</div>';
+                    return;
+                }
+                
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Duration</th>
+                            <th>Messages</th>
+                            <th>Words</th>
+                            <th>Watches Shown</th>
+                            <th>IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${currentSessions.map(session => {
+                            const startTime = new Date(session.start_time);
+                            const endTime = session.end_time ? new Date(session.end_time) : null;
+                            
+                            let duration = 'Ongoing';
+                            if (endTime) {
+                                const seconds = session.duration_seconds || 0;
+                                const minutes = Math.floor(seconds / 60);
+                                const remainingSeconds = seconds % 60;
+                                duration = `${minutes}m ${remainingSeconds}s`;
+                            }
+                            
+                            const watchesShown = session.watch_models_shown ? session.watch_models_shown.length : 0;
+                            
+                            return `
+                                <tr>
+                                    <td>${session.session_id.substring(0, 8)}...</td>
+                                    <td>${startTime.toLocaleString()}</td>
+                                    <td>${endTime ? endTime.toLocaleString() : 'N/A'}</td>
+                                    <td>${duration}</td>
+                                    <td>${session.total_messages || 0}</td>
+                                    <td>${session.total_words || 0}</td>
+                                    <td>${watchesShown}</td>
+                                    <td>${session.ip_address || 'N/A'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                `;
+                
+                content.innerHTML = '';
+                content.appendChild(table);
+                
+            } catch (error) {
+                content.innerHTML = `<div class="error">Error loading sessions: ${error.message}</div>`;
+            }
+        }
+
+        async function loadConversations() {
+            const sessionFilter = document.getElementById('sessionFilter').value;
+            const limit = document.getElementById('conversationLimit').value;
+            const content = document.getElementById('conversationsContent');
+            
+            content.innerHTML = '<div class="loading">Loading conversations...</div>';
+            
+            try {
+                let url = `/api/conversations?limit=${limit}`;
+                if (sessionFilter) {
+                    url += `&session_id=${sessionFilter}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentConversations = data.conversations;
+                
+                if (currentConversations.length === 0) {
+                    content.innerHTML = '<div class="loading">No conversations found.</div>';
+                    return;
+                }
+                
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Session</th>
+                            <th>Type</th>
+                            <th>Content</th>
+                            <th>Words</th>
+                            <th>Watch Model</th>
+                            <th>IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${currentConversations.map(conv => {
+                            const timestamp = new Date(conv.timestamp);
+                            const content = conv.content.length > 80 ? 
+                                conv.content.substring(0, 80) + '...' : 
+                                conv.content;
+                            
+                            return `
+                                <tr>
+                                    <td>${timestamp.toLocaleString()}</td>
+                                    <td>${conv.session_id.substring(0, 8)}...</td>
+                                    <td><span class="message-${conv.message_type}">${conv.message_type}</span></td>
+                                    <td>${content}</td>
+                                    <td>${conv.word_count || 0}</td>
+                                    <td>${conv.watch_model ? `<span class="watch-model">${conv.watch_model}</span>` : ''}</td>
+                                    <td>${conv.ip_address || 'N/A'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                `;
+                
+                content.innerHTML = '';
+                content.appendChild(table);
+                
+            } catch (error) {
+                content.innerHTML = `<div class="error">Error loading conversations: ${error.message}</div>`;
+            }
+        }
+
+        function exportSessions() {
+            if (currentSessions.length === 0) {
+                alert('No session data to export. Please load sessions first.');
+                return;
+            }
+            
+            const csv = [
+                ['Session ID', 'Start Time', 'End Time', 'Duration (seconds)', 'Total Messages', 'Total Words', 'User Messages', 'Assistant Messages', 'Watches Shown', 'Config ID', 'IP Address', 'User Agent'],
+                ...currentSessions.map(session => [
+                    session.session_id,
+                    session.start_time,
+                    session.end_time || '',
+                    session.duration_seconds || 0,
+                    session.total_messages || 0,
+                    session.total_words || 0,
+                    session.user_messages || 0,
+                    session.assistant_messages || 0,
+                    session.watch_models_shown ? session.watch_models_shown.join('; ') : '',
+                    session.config_id || '',
+                    session.ip_address || '',
+                    session.user_agent || ''
+                ])
+            ].map(row => row.map(field => `"${field}"`).join(',')).join('\n');
+            
+            downloadCSV(csv, 'lorent_sessions_detailed.csv');
+        }
+
+        function exportConversations() {
+            if (currentConversations.length === 0) {
+                alert('No conversation data to export. Please load conversations first.');
+                return;
+            }
+            
+            const csv = [
+                ['ID', 'Session ID', 'Timestamp', 'Message Type', 'Content', 'Word Count', 'Character Count', 'Sentence Count', 'Watch Model', 'IP Address', 'User Agent'],
+                ...currentConversations.map(conv => [
+                    conv.id,
+                    conv.session_id,
+                    conv.timestamp,
+                    conv.message_type,
+                    conv.content,
+                    conv.word_count || 0,
+                    conv.character_count || 0,
+                    conv.sentence_count || 0,
+                    conv.watch_model || '',
+                    conv.ip_address || '',
+                    conv.user_agent || ''
+                ])
+            ].map(row => row.map(field => `"${field}"`).join(',')).join('\n');
+            
+            downloadCSV(csv, 'lorent_conversations_detailed.csv');
+        }
+
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', filename);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // Initialize dashboard
+        window.addEventListener('DOMContentLoaded', () => {
+            loadAnalytics();
+            loadSessions();
+            loadConversations();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                loadAnalytics();
+            }, 30000);
+        });
+    </script>
+</body>
+</html>
