@@ -607,13 +607,11 @@
                 
                 currentSessions = sessionsData.sessions;
 
-                // Calculate aggregated emotions from sessions
-                const aggregatedEmotions = calculateGlobalEmotions(currentSessions);
-
                 // Update key metrics
                 updateKeyMetrics(analytics, currentSessions);
                 
-                // Update insights
+                // Aggregate emotions from sessions and update
+                const aggregatedEmotions = aggregateEmotionsFromSessions(currentSessions);
                 updateTopEmotions(aggregatedEmotions);
                 updatePopularWatches(analytics.popular_watches);
 
@@ -655,37 +653,34 @@
             document.getElementById('engagementDesc').textContent = 'Watch display rate';
         }
 
-        function calculateGlobalEmotions(sessions) {
+        function aggregateEmotionsFromSessions(sessions) {
             const emotionTotals = {};
-            const emotionCounts = {};
-            let totalSessionsWithEmotions = 0;
-
+            let totalEmotionalSessions = 0;
+            
             sessions.forEach(session => {
                 if (session.emotions_processed && session.top_emotions) {
-                    totalSessionsWithEmotions++;
+                    totalEmotionalSessions++;
                     
-                    // Aggregate emotions from this session
+                    // Add emotions from this session to totals
                     Object.entries(session.top_emotions).forEach(([emotion, score]) => {
                         if (!emotionTotals[emotion]) {
                             emotionTotals[emotion] = 0;
-                            emotionCounts[emotion] = 0;
                         }
                         emotionTotals[emotion] += score;
-                        emotionCounts[emotion]++;
                     });
                 }
             });
-
-            // Calculate average scores for each emotion
-            const globalTopEmotions = {};
-            Object.keys(emotionTotals).forEach(emotion => {
-                globalTopEmotions[emotion] = emotionTotals[emotion] / emotionCounts[emotion];
-            });
-
+            
+            // Calculate averages
+            if (totalEmotionalSessions > 0) {
+                Object.keys(emotionTotals).forEach(emotion => {
+                    emotionTotals[emotion] = emotionTotals[emotion] / totalEmotionalSessions;
+                });
+            }
+            
             return {
-                global_top_emotions: globalTopEmotions,
-                sessions_with_emotions: totalSessionsWithEmotions,
-                total_sessions: sessions.length
+                global_top_emotions: emotionTotals,
+                sessions_with_emotions: totalEmotionalSessions
             };
         }
 
@@ -694,7 +689,12 @@
             
             if (!emotionData || !emotionData.global_top_emotions || 
                 Object.keys(emotionData.global_top_emotions).length === 0) {
-                container.innerHTML = '<div class="loading">No emotional data yet</div>';
+                container.innerHTML = `
+                    <div class="loading">No emotional data yet</div>
+                    <p style="text-align: center; margin-top: 15px; color: rgba(255,255,255,0.7); font-size: 0.85rem;">
+                        Emotions will appear as customers interact
+                    </p>
+                `;
                 return;
             }
 
@@ -702,24 +702,24 @@
                 .sort(([,a], [,b]) => b - a)
                 .slice(0, 5); // Top 5 emotions
 
-            const html = emotions.map(([emotion, score]) => `
+            let html = emotions.map(([emotion, score]) => `
                 <div class="emotion-item">
                     <span class="emotion-name">${emotion}</span>
                     <span class="emotion-score">${(score * 100).toFixed(1)}%</span>
                 </div>
             `).join('');
 
-            // Add summary info
-            const summaryHtml = `
-                <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px; text-align: center;">
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.8);">
-                        ${emotionData.sessions_with_emotions} of ${emotionData.total_sessions} sessions with emotions
-                        (${((emotionData.sessions_with_emotions / emotionData.total_sessions) * 100).toFixed(1)}% coverage)
+            // Add summary
+            html += `
+                <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold-accent);">${emotionData.sessions_with_emotions}</div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">Sessions with emotional data</div>
                     </div>
                 </div>
             `;
 
-            container.innerHTML = html + summaryHtml;
+            container.innerHTML = html;
         }
 
         function updatePopularWatches(watches) {
