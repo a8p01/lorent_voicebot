@@ -652,27 +652,71 @@
             document.getElementById('engagementDesc').textContent = 'Watch display rate';
         }
 
-        function updateTopEmotions(emotionData) {
+        async function updateTopEmotions(emotionData) {
             const container = document.getElementById('topEmotions');
             
-            if (!emotionData || !emotionData.global_top_emotions || 
-                Object.keys(emotionData.global_top_emotions).length === 0) {
-                container.innerHTML = '<div class="loading">No emotional data yet</div>';
-                return;
+            try {
+                // If we have emotion analytics data, use it
+                if (emotionData && emotionData.global_top_emotions && 
+                    Object.keys(emotionData.global_top_emotions).length > 0) {
+                    
+                    const emotions = Object.entries(emotionData.global_top_emotions)
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 5);
+
+                    const html = emotions.map(([emotion, score]) => `
+                        <div class="emotion-item">
+                            <span class="emotion-name">${emotion}</span>
+                            <span class="emotion-score">${(score * 100).toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+
+                    container.innerHTML = html;
+                    return;
+                }
+
+                // Otherwise, calculate from sessions data
+                const allEmotions = {};
+                let totalEmotionalSessions = 0;
+
+                currentSessions.forEach(session => {
+                    if (session.top_emotions && Object.keys(session.top_emotions).length > 0) {
+                        totalEmotionalSessions++;
+                        Object.entries(session.top_emotions).forEach(([emotion, score]) => {
+                            if (!allEmotions[emotion]) allEmotions[emotion] = [];
+                            allEmotions[emotion].push(score);
+                        });
+                    }
+                });
+
+                if (Object.keys(allEmotions).length === 0) {
+                    container.innerHTML = '<div class="loading">No emotional data yet</div>';
+                    return;
+                }
+
+                // Calculate average scores for each emotion
+                const avgEmotions = {};
+                Object.entries(allEmotions).forEach(([emotion, scores]) => {
+                    avgEmotions[emotion] = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+                });
+
+                const topEmotions = Object.entries(avgEmotions)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+
+                const html = topEmotions.map(([emotion, score]) => `
+                    <div class="emotion-item">
+                        <span class="emotion-name">${emotion}</span>
+                        <span class="emotion-score">${(score * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error updating emotions:', error);
+                container.innerHTML = '<div class="loading">Error loading emotions</div>';
             }
-
-            const emotions = Object.entries(emotionData.global_top_emotions)
-                .sort(([,a], [,b]) => b - a)
-                .slice(0, 5); // Top 5 emotions
-
-            const html = emotions.map(([emotion, score]) => `
-                <div class="emotion-item">
-                    <span class="emotion-name">${emotion}</span>
-                    <span class="emotion-score">${(score * 100).toFixed(1)}%</span>
-                </div>
-            `).join('');
-
-            container.innerHTML = html;
         }
 
         function updatePopularWatches(watches) {
