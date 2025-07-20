@@ -865,45 +865,73 @@
             const sessionsWithEmotions = [];
             
             sessions.forEach(session => {
-                if (session.emotions_processed && session.emotion_summary && session.emotion_summary.average_emotions) {
-                    totalEmotionalSessions++;
-                    const avgEmotions = session.emotion_summary.average_emotions;
+                // Check for emotional data - handle both nested and direct structure
+                let avgEmotions = null;
+                let topEmotions = null;
+                
+                if (session.emotions_processed) {
+                    // Try nested structure first (emotion_summary.average_emotions)
+                    if (session.emotion_summary && session.emotion_summary.average_emotions) {
+                        avgEmotions = session.emotion_summary.average_emotions;
+                        topEmotions = session.emotion_summary.top_emotions || {};
+                    }
+                    // Try direct structure (average_emotions at session level)
+                    else if (session.average_emotions) {
+                        avgEmotions = session.average_emotions;
+                        topEmotions = session.top_emotions || {};
+                    }
                     
-                    // Store session-level data
-                    sessionsWithEmotions.push({
-                        session_id: session.session_id,
-                        start_time: session.start_time,
-                        duration: session.duration_seconds,
-                        total_messages: session.total_messages,
-                        emotional_messages: session.total_emotional_messages || 0,
-                        emotions: avgEmotions,
-                        top_emotions: session.emotion_summary.top_emotions || {}
-                    });
-                    
-                    totalEmotionalMessages += session.total_emotional_messages || 0;
-                    
-                    // Aggregate emotions
-                    Object.entries(avgEmotions).forEach(([emotion, score]) => {
-                        if (!emotionTotals[emotion]) {
-                            emotionTotals[emotion] = 0;
-                            emotionCounts[emotion] = 0;
-                        }
-                        emotionTotals[emotion] += score;
-                        emotionCounts[emotion]++;
-                    });
+                    if (avgEmotions) {
+                        totalEmotionalSessions++;
+                        
+                        // Store session-level data
+                        sessionsWithEmotions.push({
+                            session_id: session.session_id,
+                            start_time: session.start_time,
+                            duration: session.duration_seconds,
+                            total_messages: session.total_messages,
+                            emotional_messages: session.total_emotional_messages || 0,
+                            emotions: avgEmotions,
+                            top_emotions: topEmotions
+                        });
+                        
+                        totalEmotionalMessages += session.total_emotional_messages || 0;
+                        
+                        // Aggregate emotions
+                        Object.entries(avgEmotions).forEach(([emotion, score]) => {
+                            if (typeof score === 'number' && !isNaN(score)) {
+                                if (!emotionTotals[emotion]) {
+                                    emotionTotals[emotion] = 0;
+                                    emotionCounts[emotion] = 0;
+                                }
+                                emotionTotals[emotion] += score;
+                                emotionCounts[emotion]++;
+                            }
+                        });
+                    }
                 }
             });
             
             // Calculate averages
             const emotionAverages = {};
             Object.keys(emotionTotals).forEach(emotion => {
-                emotionAverages[emotion] = emotionTotals[emotion] / emotionCounts[emotion];
+                if (emotionCounts[emotion] > 0) {
+                    emotionAverages[emotion] = emotionTotals[emotion] / emotionCounts[emotion];
+                }
             });
             
             // Sort emotions by intensity
             const topEmotions = Object.entries(emotionAverages)
                 .sort(([,a], [,b]) => b - a)
                 .slice(0, 10);
+            
+            console.log('Emotional Data Debug:', {
+                totalSessions: sessions.length,
+                totalEmotionalSessions,
+                totalEmotionalMessages,
+                topEmotions: topEmotions.slice(0, 5),
+                sampleSession: sessions.find(s => s.emotions_processed)
+            });
             
             return {
                 totalEmotionalSessions,
@@ -1056,16 +1084,21 @@
                 return;
             }
 
-            // Calculate engagement for each watch
+            // Calculate engagement for each watch using corrected emotional data access
             const watchEngagement = {};
             sessions.forEach(session => {
                 if (session.watch_models_shown && session.emotions_processed) {
+                    // Check if session has emotional messages
+                    const hasEmotionalData = (session.total_emotional_messages && session.total_emotional_messages > 0) ||
+                                           (session.emotion_summary && session.emotion_summary.average_emotions) ||
+                                           (session.average_emotions);
+                    
                     session.watch_models_shown.forEach(model => {
                         if (!watchEngagement[model]) {
                             watchEngagement[model] = { emotional_sessions: 0, total_sessions: 0 };
                         }
                         watchEngagement[model].total_sessions++;
-                        if (session.total_emotional_messages > 0) {
+                        if (hasEmotionalData) {
                             watchEngagement[model].emotional_sessions++;
                         }
                     });
@@ -1075,7 +1108,7 @@
             const html = watches.slice(0, 6).map((watch, index) => {
                 const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⌚';
                 const engagement = watchEngagement[watch.model];
-                const engagementRate = engagement ? 
+                const engagementRate = engagement && engagement.total_sessions > 0 ? 
                     ((engagement.emotional_sessions / engagement.total_sessions) * 100).toFixed(0) : '0';
                 
                 return `
@@ -1120,7 +1153,12 @@
         }
 
         function updateTemporalPatterns(sessions) {
-            const emotionalSessions = sessions.filter(s => s.emotions_processed && s.emotion_summary);
+            const emotionalSessions = sessions.filter(s => {
+                return s.emotions_processed && (
+                    (s.emotion_summary && s.emotion_summary.average_emotions) ||
+                    s.average_emotions
+                );
+            });
             
             if (emotionalSessions.length === 0) return;
 
@@ -1132,7 +1170,8 @@
                     hourlyData[hour] = { contemplation: [], interest: [], satisfaction: [], count: 0 };
                 }
                 
-                const emotions = session.emotion_summary.average_emotions;
+                // Get emotions from correct structure
+                const emotions = session.emotion_summary?.average_emotions || session.average_emotions;
                 if (emotions) {
                     hourlyData[hour].contemplation.push(emotions.Contemplation || 0);
                     hourlyData[hour].interest.push(emotions.Interest || 0);
@@ -1200,14 +1239,19 @@
         }
 
         function updateEmotionalJourney(sessions) {
-            const emotionalSessions = sessions.filter(s => s.emotions_processed && s.emotion_summary)
-                .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+            const emotionalSessions = sessions.filter(s => {
+                return s.emotions_processed && (
+                    (s.emotion_summary && s.emotion_summary.average_emotions) ||
+                    s.average_emotions
+                );
+            }).sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
             
             if (emotionalSessions.length === 0) return;
 
             // Prepare journey data
             const journeyData = emotionalSessions.map((session, index) => {
-                const emotions = session.emotion_summary.average_emotions;
+                // Get emotions from correct structure
+                const emotions = session.emotion_summary?.average_emotions || session.average_emotions;
                 return {
                     x: index + 1,
                     contemplation: (emotions.Contemplation || 0) * 100,
